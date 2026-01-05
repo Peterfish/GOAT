@@ -1,6 +1,6 @@
 # Ollama Cloud Configuration
 OLLAMA_HOST = 'https://ollama.com'
-OLLAMA_API_KEY = '2e5ccba19f6e4a70846ed5345c3bdce0.rxVhON4EegobaFQxf2ke-j_j'
+OLLAMA_API_KEY = ''
 MODEL = 'kimi-k2-thinking:cloud'  # หรือใช้ kimi-k2:1t-cloud หรือ kimi-k2-thinking:cloud
 
 # Kimi-K2-Thinking Recommended Parameters
