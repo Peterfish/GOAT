@@ -1,16 +1,32 @@
 # GOAT-Storytelling-Agent: Agent for writing consistent and interesting long stories for any fiction form
 ![Goat Agent](./images/GOAT-story.png)
+
+**Version 1.1.0** - Now with Story Context System for better continuity!
+
 ## Description
-GOAT-Storytelling-Agent writes consistent and  interesting stories over long context requiring only a standard LLM for text generation. By default it takes our open-source model, [GOAT-70B-Storytelling](https://huggingface.co/GOAT-AI/GOAT-70B-Storytelling), specifically tuned for the task.
+GOAT-Storytelling-Agent writes consistent and  interesting stories over long context requiring only a standard LLM for text generation. This version uses **Ollama Cloud** with the `kimi-k2-thinking:cloud` model.
 The agent consists of several stages of planning and writing to build a story from top to down. A user can control the story creation at any preferred scale - starting from a basic novel description to the text of a specific scene. More details can be found in the [release blogpost](https://www.blog.goat.ai/goat-st/).
+
+### What's New in v1.1.0
+- **Story Context System**: Automatic tracking of story elements across chapters for better continuity
+- **Chapter Summaries**: Each chapter is summarized after writing
+- **Character State Tracking**: Track character locations, emotional states, and goals
+- **Key Events Log**: Important plot events are recorded and passed to subsequent chapters
+- **Relationship Tracking**: Character relationships are monitored throughout the story
 
 ## Novella dataset
 To demonstrate the capabilities of the agent, we release 20 novellas generated without human supervision requiring only single initial topic for input. The dataset is hosted as an HF dataset - [generated-novels](https://huggingface.co/datasets/GOAT-AI/generated-novels/tree/main/generated-books).
 
 ## Setup
-1. Provide configuration details in `goat_storytelling_agent/config.py` with a text generation endpoint and huggingface access token for tokenizer initialization.
+1. Configure your Ollama Cloud API in `goat_storytelling_agent/config.py`:
 
-2. You can install the dependencies only
+```python
+OLLAMA_HOST = 'https://ollama.com'
+OLLAMA_API_KEY = 'your-api-key-here'
+MODEL = 'kimi-k2-thinking:cloud'
+```
+
+2. Install the dependencies:
 
     ```pip install -r requirements.txt```
 
@@ -18,16 +34,249 @@ To demonstrate the capabilities of the agent, we release 20 novellas generated w
 
     ```pip install -e .```
 
-## Usage
+---
+
+## วิธีใช้งาน Story Pipeline (ภาษาไทย)
+
+Story Pipeline ช่วยให้คุณสร้างเรื่องทีละขั้นตอน โดยสามารถแก้ไขผลลัพธ์ในแต่ละขั้นตอนก่อนไปขั้นตอนถัดไป
+
+### ภาพรวม 6 ขั้นตอน
+
+| ขั้นตอน | ชื่อ | คำอธิบาย | ไฟล์ผลลัพธ์ |
+|---------|------|----------|-------------|
+| 1 | Init Book Spec | สร้างโครงร่างหนังสือจาก topic | `output/step1_book_spec.json` |
+| 2 | Enhance Book Spec | ปรับปรุงโครงร่างให้ละเอียดขึ้น | `output/step2_enhanced_spec.json` |
+| 3 | Create Plot Chapters | สร้างโครงเรื่องและบท | `output/step3_plot_chapters.json` |
+| 4 | Enhance Plot Chapters | ปรับปรุงโครงเรื่อง | `output/step4_enhanced_chapters.json` |
+| 5 | Split into Scenes | แบ่งบทเป็นฉาก | `output/step5_scenes.json` |
+| 6 | Write Scenes | เขียนเนื้อหาแต่ละฉาก | `output/step6_story.json`, `output/story.txt` |
+
+### ขั้นตอนที่ 1: สร้างโครงร่างหนังสือ
+
+ใช้คำสั่งนี้เพื่อสร้างโครงร่างหนังสือจาก topic ที่คุณต้องการ:
+
+```bash
+python story_pipeline.py 1 --topic "หัวข้อเรื่องของคุณ"
+```
+
+**ตัวอย่าง:**
+```bash
+python story_pipeline.py 1 --topic "mystery in Bangkok"
+python story_pipeline.py 1 --topic "ความรักในกรุงเทพ"
+python story_pipeline.py 1 --topic "treasure hunt in a jungle"
+```
+
+**ผลลัพธ์:** ระบบจะสร้างไฟล์ `output/step1_book_spec.json` ที่มีข้อมูล:
+- **Genre:** ประเภทเรื่อง
+- **Place:** สถานที่
+- **Time:** ช่วงเวลา
+- **Theme:** ธีมหลัก
+- **Tone:** อารมณ์ของเรื่อง
+- **Point of View:** มุมมองการเล่า
+- **Characters:** ตัวละคร
+- **Premise:** เนื้อเรื่องย่อ
+
+**ตัวเลือกเพิ่มเติม:**
+```bash
+# กำหนดรูปแบบการเขียน (novel, novella, short story)
+python story_pipeline.py 1 --topic "your topic" --form novella
+```
+
+### ขั้นตอนที่ 2: ปรับปรุงโครงร่าง
+
+หลังจากตรวจสอบและแก้ไข `step1_book_spec.json` แล้ว ให้รันคำสั่งนี้:
+
+```bash
+python story_pipeline.py 2
+```
+
+**สิ่งที่เกิดขึ้น:**
+1. ระบบอ่านไฟล์ `output/step1_book_spec.json`
+2. AI ปรับปรุงโครงร่างให้ละเอียดและน่าสนใจมากขึ้น
+3. บันทึกผลลัพธ์ลง `output/step2_enhanced_spec.json`
+
+**ผลลัพธ์:** ไฟล์ JSON ที่มีรายละเอียดเพิ่มเติม เช่น:
+- สถานที่เฉพาะเจาะจงมากขึ้น
+- ตัวละครมีความลึกมากขึ้น
+- เนื้อเรื่องมีรายละเอียดมากขึ้น
+
+### การแก้ไขไฟล์ JSON
+
+คุณสามารถเปิดไฟล์ JSON และแก้ไขได้ก่อนรันขั้นตอนถัดไป:
+
+```json
+{
+  "step": 1,
+  "topic": "mystery in Bangkok",
+  "book_spec": {
+    "Genre": "Neo-noir mystery thriller",
+    "Place": "Bangkok, Thailand",
+    "Characters": "..."
+  }
+}
+```
+
+**แก้ไขได้ตามต้องการ** เช่น:
+- เปลี่ยนชื่อตัวละคร
+- เพิ่มรายละเอียดสถานที่
+- ปรับแต่งเนื้อเรื่อง
+
+### ขั้นตอนที่ 3: สร้างโครงเรื่องและบท
+
+```bash
+python story_pipeline.py 3
+```
+
+**สิ่งที่เกิดขึ้น:**
+1. อ่าน book spec จากขั้นตอนที่ 2
+2. สร้างโครงเรื่องแบ่งเป็น 3 Acts พร้อม Chapters
+3. บันทึกลง `output/step3_plot_chapters.json`
+
+### ขั้นตอนที่ 4: ปรับปรุงโครงเรื่อง
+
+```bash
+python story_pipeline.py 4
+```
+
+**สิ่งที่เกิดขึ้น:**
+1. อ่าน plot chapters จากขั้นตอนที่ 3
+2. ปรับปรุงแต่ละ Act ให้มีรายละเอียดและน่าสนใจมากขึ้น
+3. บันทึกลง `output/step4_enhanced_chapters.json`
+
+### ขั้นตอนที่ 5: แบ่งบทเป็นฉาก
+
+```bash
+python story_pipeline.py 5
+```
+
+**สิ่งที่เกิดขึ้น:**
+1. อ่าน enhanced chapters จากขั้นตอนที่ 4
+2. แบ่งแต่ละ Chapter เป็น Scenes พร้อมรายละเอียด (ตัวละคร, สถานที่, เวลา, เหตุการณ์)
+3. บันทึกลง `output/step5_scenes.json`
+
+### ขั้นตอนที่ 6: เขียนเนื้อหา
+
+**เขียนทุกบท:**
+```bash
+python story_pipeline.py 6
+```
+
+**เขียนเฉพาะบทที่ต้องการ:**
+```bash
+python story_pipeline.py 6 --chapter 1    # เขียนเฉพาะบทที่ 1
+python story_pipeline.py 6 --chapter 5    # เขียนเฉพาะบทที่ 5
+```
+
+**สิ่งที่เกิดขึ้น:**
+1. อ่าน scenes จากขั้นตอนที่ 5
+2. เขียนเนื้อหาแต่ละ scene
+3. บันทึกแต่ละบทเป็นไฟล์แยก: `output/chapters/chapter_01.txt`, `chapter_02.txt`, ...
+
+**ข้อดี:**
+- ถ้า API error จะไม่ต้องเริ่มใหม่ทั้งหมด
+- บทที่เขียนไปแล้วจะถูก skip โดยอัตโนมัติ
+- สามารถเขียนทีละบทเพื่อตรวจสอบได้
+
+### Story Context System (ระบบติดตามบริบทเรื่อง)
+
+ในเวอร์ชัน 1.1.0 ระบบจะติดตามบริบทเรื่องโดยอัตโนมัติเพื่อให้เรื่องต่อเนื่องกัน:
+
+**ไฟล์ที่สร้าง:** `output/story_context.json`
+
+**ข้อมูลที่ติดตาม:**
+| ประเภท | คำอธิบาย |
+|--------|----------|
+| Chapter Summaries | สรุปแต่ละบท (2-3 ประโยค) |
+| Character States | สถานะตัวละคร (ตำแหน่ง, อารมณ์, เป้าหมาย) |
+| Key Events | เหตุการณ์สำคัญและผลกระทบ |
+| Relationships | ความสัมพันธ์ระหว่างตัวละคร |
+
+**การทำงาน:**
+1. ก่อนเขียนแต่ละบท - ระบบดึงบริบทจากบทก่อนหน้า
+2. ส่ง context ให้ AI เพื่อรักษาความต่อเนื่อง
+3. หลังเขียนเสร็จ - สรุปบทและดึงข้อมูลตัวละคร/เหตุการณ์
+4. บันทึกลง `story_context.json` สำหรับบทถัดไป
+
+**ตัวอย่าง story_context.json:**
+```json
+{
+  "chapter_summaries": {
+    "1": "Dr. Helen discovers an ancient map...",
+    "2": "The team assembles and plans their journey..."
+  },
+  "character_states": {
+    "Dr. Helen Carr": {
+      "location": "Research facility",
+      "emotional_state": "Excited but cautious",
+      "goal": "Find the artifact"
+    }
+  },
+  "key_events": [
+    {"chapter": 1, "event": "Map discovered", "impact": "Sets the journey in motion"}
+  ],
+  "relationships": {
+    "Helen|Ignacio": {"status": "Professional trust", "change_reason": "Survived danger together"}
+  }
+}
+```
+
+### ตัวอย่างการใช้งานเต็มรูปแบบ
+
+```bash
+# ขั้นตอนที่ 1: สร้างโครงร่าง
+python story_pipeline.py 1 --topic "นักสืบในเชียงใหม่"
+
+# (เปิด output/step1_book_spec.json แก้ไขตามต้องการ)
+
+# ขั้นตอนที่ 2: ปรับปรุงโครงร่าง
+python story_pipeline.py 2
+
+# (เปิด output/step2_enhanced_spec.json แก้ไขตามต้องการ)
+
+# ขั้นตอนที่ 3: สร้างโครงเรื่องและบท
+python story_pipeline.py 3
+
+# (เปิด output/step3_plot_chapters.json แก้ไขตามต้องการ)
+
+# ขั้นตอนที่ 4: ปรับปรุงโครงเรื่อง
+python story_pipeline.py 4
+
+# (เปิด output/step4_enhanced_chapters.json แก้ไขตามต้องการ)
+
+# ขั้นตอนที่ 5: แบ่งบทเป็นฉาก
+python story_pipeline.py 5
+
+# (เปิด output/step5_scenes.json แก้ไขตามต้องการ)
+
+# ขั้นตอนที่ 6: เขียนเนื้อหา (ใช้เวลานาน)
+python story_pipeline.py 6
+
+# ผลลัพธ์สุดท้าย: output/story.txt
+```
+
+### หมายเหตุ
+
+- ไฟล์ JSON ทั้งหมดอยู่ในโฟลเดอร์ `output/`
+- ใช้ encoding UTF-8 สำหรับภาษาไทย
+- แต่ละขั้นตอนต้องรันตามลำดับ (1 → 2 → 3 → ...)
+
+---
+
+## Usage (English)
 ### Generate a complete story from a topic (complete pipeline)
-The whole pipeline consists of an interplay between different story elements. A whole story can be generated from scratch using the general pipeline. Currently, `HF(TGI)` and `Llama.cpp` text generation backends are supported, but can be extended to any engine.
+The whole pipeline consists of an interplay between different story elements. A whole story can be generated from scratch using the general pipeline.
 
 ```python
 from goat_storytelling_agent.storytelling_agent import StoryAgent
 
-backend_uri = 'http://localhost:8080' # specify your generation endpoint
-writer = StoryAgent(backend_uri, backend="llama.cpp", form='novel')
+writer = StoryAgent(form='novel')
 novel_scenes = writer.generate_story('treasure hunt in a jungle')
+```
+
+You can also specify a custom model:
+
+```python
+writer = StoryAgent(model='kimi-k2-thinking:cloud', form='novel')
 ```
 
 Under the hood, `generate_story` performs following operations:
@@ -128,64 +377,94 @@ Finally, it is possible to generate the scene text with `write_a_scene`. Sometim
 messages, generated_scene = writer.write_a_scene(
     scene_descr, sc_num+1, ch_num, plan, previous_scene=None)
 ```
+
+### Story Context System (v1.1.0)
+
+The Story Context System automatically tracks story elements across chapters to ensure continuity. This is especially important for long stories where the AI might otherwise lose track of character states, events, and relationships.
+
+#### Using StoryContext
+
+```python
+from goat_storytelling_agent import StoryAgent, StoryContext
+
+# Initialize
+writer = StoryAgent(form='novel')
+story_ctx = StoryContext('output')
+
+# After writing a chapter, update the context
+chapter_text = "..."  # The generated chapter text
+chapter_num = 1
+
+# Summarize the chapter
+summary = writer.summarize_chapter(chapter_num, chapter_text)
+story_ctx.add_chapter_summary(chapter_num, summary)
+
+# Extract character states, events, and relationships
+context_data = writer.extract_chapter_context(chapter_num, chapter_text,
+                                               character_names=['Helen', 'Ignacio'])
+
+# Update character states
+for char in context_data.get('characters', []):
+    story_ctx.update_character_state(
+        char['name'],
+        location=char.get('location'),
+        emotional_state=char.get('emotional_state'),
+        goal=char.get('goal')
+    )
+
+# Add key events
+for event in context_data.get('key_events', []):
+    story_ctx.add_key_event(chapter_num, event['event'], event.get('impact', ''))
+
+# Update relationships
+for rel in context_data.get('relationships', []):
+    story_ctx.update_relationship(rel['char1'], rel['char2'],
+                                   rel['status'], rel.get('reason', ''))
+
+# Get context for writing the next chapter
+context_str = story_ctx.get_context_for_writing(chapter_num + 1)
+
+# Write next scene with context
+messages, scene = writer.write_a_scene(
+    scene_descr, sc_num, ch_num, plan,
+    book_spec=book_spec,
+    story_context=context_str  # Pass context for continuity
+)
 ```
-Chapter 1: Unveiling Secrets
 
-Dr. Helen Carr was no stranger to mystery. Within the confines of her
-office at the prestigious Oxford University, the archaeologist had 
-brought age-old artifacts to life, disseminating enigmatic tales of 
-civilizations long lost. Under the golden hue of her desk lamp this 
-cool morning, stood an object of ultimate intrigue - an ancient map 
-she'd discovered on her last expedition to Peru.
+#### Context Data Structure
 
-The map was an intricate dance of color and lines, a kaleidoscope of 
-symbols that caught Helen's eyes. She sat at her desk, her steaming 
-cup of Earl Grey ignored as she poured over the parchment, a delicious 
-thrill coursing through her veins. The map bore its age with grace, 
-the edges slightly singed, mocking her with its stoic silence.
+The `story_context.json` file contains:
 
-She felt that some secrets were locked inside this parchment. "Talk to 
-me", Helen whispered to herself, her eyes squinting at the delicately 
-inscribed symbols. Her fingers traced the lines of the map, feeling 
-the faintest etchings, the texture almost whispering the tales of yore.
+| Field | Description |
+|-------|-------------|
+| `chapter_summaries` | Brief summary of each chapter (2-3 sentences) |
+| `character_states` | Current state of each character (location, emotion, goal) |
+| `key_events` | Important plot events with their impact |
+| `relationships` | Character relationships and how they evolved |
 
-Suddenly, she paused. Her heart throbbed a little as she looked at a 
-part of the map that felt different from the rest. Helen lowered her 
-eyeglasses down to her nose, peering at a set of unusual inscriptions. 
+#### New Methods in v1.1.0
 
-Her blood was now a concerto of adrenaline. Something was uncannily 
-remarkable with the characters etched. "An undiscovered dialect? No." 
-Helen muttered. The characters resembled a form of ancient Amazonian 
-language. But this wasn't right, ancient Amazonian dialect wasn't a 
-writing language.
+| Method | Description |
+|--------|-------------|
+| `StoryAgent.summarize_chapter(chapter_num, text)` | Returns a 2-3 sentence summary |
+| `StoryAgent.extract_chapter_context(chapter_num, text, characters)` | Extracts structured context data |
+| `StoryContext.get_context_for_writing(chapter_num)` | Returns formatted context string |
+| `StoryContext.add_chapter_summary(num, summary)` | Adds chapter summary |
+| `StoryContext.update_character_state(name, ...)` | Updates character state |
+| `StoryContext.add_key_event(chapter, event, impact)` | Adds key event |
+| `StoryContext.update_relationship(char1, char2, status, reason)` | Updates relationship |
 
-Determinedly, she grabbed several volumes from her bookshelf, each a 
-hefty tome of knowledge on South American civilizations. Helen 
-immersed herself in study, to decode the curious symbols. The aroma of 
-old books mixed with her dampening enthusiasm, turning the hours into 
-seconds.
+---
 
-Just as lunch time approached, the mood of frustration counterpointed 
-with a moment of insight. With shaking hands, Helen drew parallels 
-between the symbols and ancient Amazonian petroglyphs, forgotten by 
-the world except for a handful of scholars such as herself.
+## Configuration
 
-As she successfully decoded the symbols one after another, the meaning 
-dawned on her - the location of a priceless artifact, hidden within 
-the unfathomable Amazon jungle depths. Helen's heart thumped loudly in 
-her ears. This ethereal moment held a mesmerizing potential - 
-countless years of seasoned research leading to an extraordinary 
-discovery.
+Edit `goat_storytelling_agent/config.py` to customize:
 
-Reverently, she touched the map again, feeling a boundless respect 
-towards the ancient civilization. They had safeguarded their 
-knowledge, handed it down until it found its way into her hands, to 
-unfurl its story and hand it down to posterity. Months of meticulously 
-planned expeditions would follow, but now, she savored this moment of 
-solitary discovery.
-
-The clock on the wall read noon but this ordinary morning had turned 
-extraordinary for Dr. Helen Carr. The walls of her office bore silent 
-witness to a remarkable revelation, one that could change the course 
-of history.
+```python
+OLLAMA_HOST = 'https://ollama.com'
+OLLAMA_API_KEY = 'your-api-key'
+MODEL = 'kimi-k2-thinking:cloud'
+MAX_TOKENS = 16384  # Maximum output tokens
+SYSTEM_PROMPT = "You are an expert fiction writer..."
 ```

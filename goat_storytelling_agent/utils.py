@@ -21,7 +21,8 @@ def remove_last_n_words(text, n):
         i += 1
         if i > len(split_text):
             break
-    split_text = split_text[:-lines_to_slice]
+    if lines_to_slice > 0:
+        split_text = split_text[:-lines_to_slice]
     text = "\n".join([" ".join(line) for line in split_text])
     return text.strip()
 
@@ -38,7 +39,7 @@ def keep_last_n_words(text, n):
                 n -= n_words
                 lines_to_slice += 1
             else:
-                split_text[i] = line[-n:]
+                split_text[-i] = line[-n:]
                 break
         i += 1
         if i > len(split_text):

@@ -12,6 +12,5 @@ packages = ["goat_storytelling_agent"]
 name = "goat_storytelling_agent"
 version = "0.0.1"
 dependencies = [
-    "requests==2.31.0",
-    "transformers==4.36.0"
+    "ollama>=0.4.0"
 ]

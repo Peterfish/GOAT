@@ -1,15 +1,12 @@
 import sys
-import time
 import re
-import json
-import requests
 import traceback
+
+from ollama import Client
 
 from goat_storytelling_agent import utils
 from goat_storytelling_agent.plan import Plan
-
-
-SUPPORTED_BACKENDS = ["hf", "llama.cpp"]
+from goat_storytelling_agent import config
 
 
 def generate_prompt_parts(
@@ -31,115 +28,66 @@ def generate_prompt_parts(
         yield '\n### ASSISTANT:'
 
 
-def _query_chat_hf(endpoint, messages, tokenizer, retries=3,
-                   request_timeout=120, max_tokens=4096,
-                   extra_options={'do_sample': True}):
-    endpoint = endpoint.rstrip('/')
+def _query_chat_ollama(client, model, messages, system_prompt=None, retries=3,
+                       request_timeout=120, max_tokens=4096, extra_options={}):
+    """Query Ollama Cloud API"""
     prompt = ''.join(generate_prompt_parts(messages))
-    tokens = tokenizer(prompt, add_special_tokens=True,
-                       truncation=False)['input_ids']
-    data = {
-        "inputs": prompt,
-        "parameters": {
-            'max_new_tokens': max_tokens - len(tokens),
-            **extra_options
-        }
-    }
-    headers = {'Content-Type': 'application/json'}
+    print(f"\n\n========== Submitting prompt: >>\n{prompt[:500]}...", end="")
+    sys.stdout.flush()
+
+    # Build messages with system prompt
+    ollama_messages = []
+    if system_prompt:
+        ollama_messages.append({"role": "system", "content": system_prompt})
+    ollama_messages.append({"role": "user", "content": prompt})
 
     while retries > 0:
         try:
-            response = requests.post(
-                f"{endpoint}/generate", headers=headers, data=json.dumps(data),
-                timeout=request_timeout)
+            response = client.chat(
+                model=model,
+                messages=ollama_messages,
+                options={
+                    "num_predict": max_tokens,
+                    **extra_options
+                }
+            )
+
             if messages and messages[-1]["role"] == "assistant":
                 result_prefix = messages[-1]["content"]
             else:
                 result_prefix = ''
-            generated_text = result_prefix + json.loads(
-                response.text)['generated_text']
-            return generated_text
-        except Exception:
+
+            generated_text = result_prefix + response['message']['content']
+            print(f"\n<<| {generated_text[:200]}...")
+            print("\nDone reading response.")
+            return generated_text.strip()
+
+        except Exception as e:
             traceback.print_exc()
-            print('Timeout error, retrying...')
+            print(f'Error, retrying... ({retries} left): {e}')
             retries -= 1
-            time.sleep(5)
-    else:
-        return ''
 
-
-def _query_chat_llamacpp(endpoint, messages, retries=3, request_timeout=120,
-                         max_tokens=4096, extra_options={}):
-    endpoint = endpoint.rstrip('/')
-    headers = {'Content-Type': 'application/json'}
-    prompt = ''.join(generate_prompt_parts(messages))
-    print(f"\n\n========== Submitting prompt: >>\n{prompt}", end="")
-    sys.stdout.flush()
-    response = requests.post(
-        f"{endpoint}/tokenize", headers=headers,
-        data=json.dumps({"content": prompt}),
-        timeout=request_timeout, stream=False)
-    tokens = [1, *response.json()["tokens"]]
-    data = {
-        "prompt": tokens,
-        "stream": True,
-        "n_predict": max_tokens - len(tokens),
-        **extra_options,
-    }
-    jdata = json.dumps(data)
-    request_kwargs = dict(headers=headers, data=jdata,
-                          timeout=request_timeout, stream=True)
-    response = requests.post(f"{endpoint}/completion", **request_kwargs)
-    result = bytearray()
-    if messages and messages[-1]["role"] == "assistant":
-        result += messages[-1]["content"].encode("utf-8")
-    is_first = True
-    for line in response.iter_lines():
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith(b"error:"):
-            retries -= 1
-            print(f"\nError(retry={retries}): {line!r}")
-            if retries < 0:
-                break
-            del response
-            time.sleep(5)
-            response = requests.post(f"{endpoint}/completion", **request_kwargs)
-            is_first = True
-            result.clear()
-            continue
-        if not line.startswith(b"data: "):
-            raise ValueError(f"Got unexpected response: {line!r}")
-        parsed = json.loads(line[6:])
-        content = parsed.get("content", b"")
-        result += bytes(content, encoding="utf-8")
-        if is_first:
-            is_first = False
-            print("<<|", end="")
-            sys.stdout.flush()
-        print(content, end="")
-        sys.stdout.flush()
-        if parsed.get("stop") is True:
-            break
-    print("\nDone reading response.")
-    return str(result, encoding="utf-8").strip()
+    return ''
 
 
 class StoryAgent:
-    def __init__(self, backend_uri, backend="hf", request_timeout=120,
-                 max_tokens=4096, n_crop_previous=400,
+    def __init__(self, model=None, request_timeout=120,
+                 max_tokens=None, n_crop_previous=400,
                  prompt_engine=None, form='novel',
-                 extra_options={}, scene_extra_options={}):
+                 extra_options=None, scene_extra_options={},
+                 system_prompt=None):
 
-        self.backend = backend.lower()
-        if self.backend not in SUPPORTED_BACKENDS:
-            raise ValueError("Unknown backend")
+        # Initialize Ollama client with Cloud API
+        self.client = Client(
+            host=config.OLLAMA_HOST,
+            headers={'Authorization': f'Bearer {config.OLLAMA_API_KEY}'}
+        )
+        self.model = model or config.MODEL
 
-        if self.backend == "hf":
-            from transformers import LlamaTokenizerFast
-            self.tokenizer = LlamaTokenizerFast.from_pretrained(
-                "GOAT-AI/GOAT-70B-Storytelling")
+        # Use config values as defaults
+        self.max_tokens = max_tokens or getattr(config, 'MAX_TOKENS', 8192)
+        self.extra_options = extra_options or getattr(config, 'EXTRA_OPTIONS', {})
+        self.system_prompt = system_prompt or getattr(config, 'SYSTEM_PROMPT', None)
 
         if prompt_engine is None:
             from goat_storytelling_agent import prompts
@@ -148,25 +96,19 @@ class StoryAgent:
             self.prompt_engine = prompt_engine
 
         self.form = form
-        self.max_tokens = max_tokens
-        self.extra_options = extra_options
-        self.scene_extra_options = extra_options.copy()
+        self.scene_extra_options = self.extra_options.copy()
         self.scene_extra_options.update(scene_extra_options)
-        self.backend_uri = backend_uri
         self.n_crop_previous = n_crop_previous
         self.request_timeout = request_timeout
 
     def query_chat(self, messages, retries=3):
-        if self.backend == "hf":
-            result = _query_chat_hf(
-                self.backend_uri, messages, self.tokenizer, retries=retries,
-                request_timeout=self.request_timeout,
-                max_tokens=self.max_tokens, extra_options=self.extra_options)
-        elif self.backend == "llama.cpp":
-            result = _query_chat_llamacpp(
-                self.backend_uri, messages, retries=retries,
-                request_timeout=self.request_timeout,
-                max_tokens=self.max_tokens, extra_options=self.extra_options)
+        result = _query_chat_ollama(
+            self.client, self.model, messages,
+            system_prompt=self.system_prompt,
+            retries=retries,
+            request_timeout=self.request_timeout,
+            max_tokens=self.max_tokens,
+            extra_options=self.extra_options)
         return result
 
     def parse_book_spec(self, text_spec):
@@ -321,13 +263,15 @@ class StoryAgent:
             all_messages.append(messages)
         return all_messages, plan
 
-    def split_chapters_into_scenes(self, plan):
+    def split_chapters_into_scenes(self, plan, book_spec=None):
         """Creates a by-scene breakdown of all chapters
 
         Parameters
         ----------
         plan : Dict
             Dict with book plan
+        book_spec : str, optional
+            Book specification with characters, setting, tone
 
         Returns
         -------
@@ -342,7 +286,7 @@ class StoryAgent:
             text_act, chs = Plan.act_2_str(plan, i)
             act_chapters[i] = chs
             messages = self.prompt_engine.split_chapters_into_scenes_messages(
-                i, text_act, self.form)
+                i, text_act, self.form, book_spec=book_spec)
             act_scenes = self.query_chat(messages)
             act['act_scenes'] = act_scenes
             all_messages.append(messages)
@@ -402,7 +346,8 @@ class StoryAgent:
         return text
 
     def write_a_scene(
-            self, scene, sc_num, ch_num, plan, previous_scene=None):
+            self, scene, sc_num, ch_num, plan, previous_scene=None,
+            book_spec=None, story_context=None):
         """Generates a scene text for a form
 
         Parameters
@@ -417,6 +362,10 @@ class StoryAgent:
             Dict with book plan
         previous_scene : str, optional
             Previous scene text, by default None
+        book_spec : str, optional
+            Book specification with characters, setting, tone, theme
+        story_context : str, optional
+            Story context from previous chapters for continuity
 
         Returns
         -------
@@ -427,7 +376,8 @@ class StoryAgent:
         """
         text_plan = Plan.plan_2_str(plan)
         messages = self.prompt_engine.scene_messages(
-            scene, sc_num, ch_num, text_plan, self.form)
+            scene, sc_num, ch_num, text_plan, self.form,
+            book_spec=book_spec, story_context=story_context)
         if previous_scene:
             previous_scene = utils.keep_last_n_words(previous_scene,
                                                      n=self.n_crop_previous)
@@ -435,6 +385,66 @@ class StoryAgent:
         generated_scene = self.query_chat(messages)
         generated_scene = self.prepare_scene_text(generated_scene)
         return messages, generated_scene
+
+    def summarize_chapter(self, chapter_num, chapter_text):
+        """สรุปบทเป็นข้อความสั้น
+
+        Parameters
+        ----------
+        chapter_num : int
+            หมายเลขบท
+        chapter_text : str
+            เนื้อหาบท
+
+        Returns
+        -------
+        str
+            สรุปบท (2-3 ประโยค)
+        """
+        messages = self.prompt_engine.chapter_summary_messages(chapter_num, chapter_text)
+        summary = self.query_chat(messages)
+        # ตัดให้สั้นถ้ายาวเกิน
+        if len(summary.split()) > 60:
+            summary = ' '.join(summary.split()[:60]) + '...'
+        return summary.strip()
+
+    def extract_chapter_context(self, chapter_num, chapter_text, character_names=None):
+        """ดึงข้อมูล context จากบท (ตัวละคร, เหตุการณ์, ความสัมพันธ์)
+
+        Parameters
+        ----------
+        chapter_num : int
+            หมายเลขบท
+        chapter_text : str
+            เนื้อหาบท
+        character_names : list, optional
+            รายชื่อตัวละครที่รู้จัก
+
+        Returns
+        -------
+        dict
+            ข้อมูล context ที่ดึงได้
+        """
+        import json
+        messages = self.prompt_engine.extract_story_context_messages(
+            chapter_num, chapter_text, character_names)
+        response = self.query_chat(messages)
+
+        # พยายาม parse JSON
+        try:
+            # ลบ markdown code block ถ้ามี
+            response = response.strip()
+            if response.startswith('```'):
+                response = response.split('```')[1]
+                if response.startswith('json'):
+                    response = response[4:]
+            response = response.strip()
+
+            context_data = json.loads(response)
+            return context_data
+        except json.JSONDecodeError:
+            print(f"Warning: Could not parse context JSON for chapter {chapter_num}")
+            return {"characters": [], "key_events": [], "relationships": []}
 
     def continue_a_scene(self, scene, sc_num, ch_num,
                          plan, current_scene=None):
@@ -477,7 +487,7 @@ class StoryAgent:
         _, book_spec = self.enhance_book_spec(book_spec)
         _, plan = self.create_plot_chapters(book_spec)
         _, plan = self.enhance_plot_chapters(book_spec, plan)
-        _, plan = self.split_chapters_into_scenes(plan)
+        _, plan = self.split_chapters_into_scenes(plan, book_spec=book_spec)
 
         form_text = []
         for act in plan:
@@ -487,7 +497,8 @@ class StoryAgent:
                     previous_scene = form_text[-1] if form_text else None
                     _, generated_scene = self.write_a_scene(
                         scene, sc_num, ch_num, plan,
-                        previous_scene=previous_scene)
+                        previous_scene=previous_scene,
+                        book_spec=book_spec)
                     form_text.append(generated_scene)
                     sc_num += 1
         return form_text
